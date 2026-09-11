@@ -12,6 +12,7 @@ const caseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "FIR",
       required: true,
+      unique: true,
     },
 
     citizenId: {
@@ -47,6 +48,33 @@ const caseSchema = new mongoose.Schema(
     jurisdiction: {
       type: String,
       default: null,
+    },
+    aiAnalysis: {
+      classification: {
+        type: String,
+        default: null,
+      },
+      confidence: {
+        type: Number,
+        default: null,
+      },
+      summary: {
+        type: String,
+        default: null,
+      },
+      severity: {
+        type: String,
+        enum: ["LOW", "MEDIUM", "HIGH"],
+        default: null,
+      },
+      reasoning: {
+        type: String,
+        default: null,
+      },
+      keywords: {
+        type: [String],
+        default: [],
+      },
     },
   },
   {
