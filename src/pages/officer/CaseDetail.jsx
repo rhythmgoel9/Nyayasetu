@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { mockOfficerCases, mockAuditLog } from '../../data/mockData';
@@ -30,6 +30,43 @@ export default function CaseDetail() {
   const [timelineEvent, setTimelineEvent] = useState({ date: '', event: '', description: '' });
 
   const [showAuditModal, setShowAuditModal] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+const [aiLoading, setAiLoading] = useState(false);
+const [aiError, setAiError] = useState('');
+
+const refreshAIAnalysis = async () => {
+  try {
+    setAiLoading(true);
+    setAiError('');
+
+    const response = await fetch('http://localhost:3001/api/ai/analyze-case', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(caseData),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get AI analysis');
+    }
+
+    const result = await response.json();
+    
+
+    localStorage.setItem(
+      `ai-analysis-${caseData.id}`,
+      JSON.stringify(result)
+    );
+
+    setAiAnalysis(result);
+  } catch (error) {
+    console.error('AI analysis error:', error);
+    setAiError('Unable to generate AI analysis.');
+  } finally {
+    setAiLoading(false);
+  }
+};
 
   // Find the case
   const caseData = mockOfficerCases?.find(c => c.id === id || c.caseId === id) || {
@@ -54,6 +91,87 @@ export default function CaseDetail() {
   };
   
   const statusStep = statusMap[caseData.status] || 1;
+  useEffect(() => {
+  const analyzeCase = async () => {
+    try {
+      setAiLoading(true);
+      setAiError('');
+
+      // Check if this case already has an AI result
+      const cachedAnalysis = localStorage.getItem(`ai-analysis-${caseData.id}`);
+
+      if (cachedAnalysis) {
+        setAiAnalysis(JSON.parse(cachedAnalysis));
+        setAiLoading(false);
+        return;
+      }
+      const refreshAIAnalysis = async () => {
+  try {
+    setAiLoading(true);
+    setAiError('');
+
+    const response = await fetch('http://localhost:3001/api/ai/analyze-case', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(caseData),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get AI analysis');
+    }
+
+    const result = await response.json();
+
+    localStorage.setItem(
+      `ai-analysis-${caseData.id}`,
+      JSON.stringify(result)
+    );
+
+    setAiAnalysis(result);
+  } catch (error) {
+    console.error('AI analysis error:', error);
+    setAiError('Unable to generate AI analysis.');
+  } finally {
+    setAiLoading(false);
+  }
+};
+
+      // No cached result → call backend
+      const response = await fetch('http://localhost:3001/api/ai/analyze-case', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(caseData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get AI analysis');
+      }
+
+      const result = await response.json();
+
+      // Save result so we don't call Gemini again for this case
+      localStorage.setItem(
+        `ai-analysis-${caseData.id}`,
+        JSON.stringify(result)
+      );
+
+      setAiAnalysis(result);
+    } catch (error) {
+      console.error('AI analysis error:', error);
+      setAiError('Unable to generate AI analysis.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  if (caseData.title !== 'Unknown Case') {
+    analyzeCase();
+  }
+}, [id]);
 
   // Mock Evidence data if not present
   const evidenceList = caseData.evidence || [
@@ -215,6 +333,130 @@ export default function CaseDetail() {
               </div>
             </div>
 
+            {/* AI Case Analysis */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-violet-100 shadow-sm p-6 animate-fade-in-up">
+              <div className="flex items-center justify-between mb-4">
+  <h2 className="text-xl font-serif font-semibold text-violet-800">
+    AI Case Analysis
+  </h2>
+
+  <button
+    onClick={refreshAIAnalysis}
+    disabled={aiLoading}
+    className="px-3 py-2 rounded-lg bg-violet-100 text-violet-700 text-sm font-medium hover:bg-violet-200 disabled:opacity-50"
+  >
+    {aiLoading ? 'Analyzing...' : 'Refresh AI'}
+  </button>
+</div>
+
+              {aiLoading && (
+                <div className="text-sm text-slate-600">
+                  Analyzing case with AI...
+                </div>
+              )}
+
+              {aiError && (
+                <div className="text-sm text-rose-600">
+                  {aiError}
+                </div>
+              )}
+
+              {aiAnalysis && (
+                <div className="space-y-5">
+
+                  {/* Classification */}
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">
+                      Classification
+                    </p>
+
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="font-semibold text-slate-800">
+                        {aiAnalysis.classification}
+                      </p>
+
+                      <span className="px-3 py-1 rounded-full bg-violet-100 text-violet-700 text-sm font-medium">
+                        {Math.round(aiAnalysis.confidence * 100)}% confidence
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Reasoning */}
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">
+                      AI Reasoning
+                    </p>
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {aiAnalysis.reasoning}
+                    </p>
+                  </div>
+
+                  {/* Summary */}
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">
+                      Case Summary
+                    </p>
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {aiAnalysis.summary}
+                    </p>
+                  </div>
+
+                  {/* Key Information */}
+                  <div>
+                    <p className="text-sm text-slate-500 mb-2">
+                      Key Information
+                    </p>
+
+                    <div className="space-y-2">
+                      {Array.isArray(aiAnalysis.keyInformation)
+                        ? aiAnalysis.keyInformation.map((item, index) => (
+                            <div
+                              key={index}
+                              className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3"
+                            >
+                              {item}
+                            </div>
+                          ))
+                        : Object.entries(aiAnalysis.keyInformation || {}).map(
+                            ([key, value]) => (
+                              <div
+                                key={key}
+                                className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3"
+                              >
+                                <span className="font-medium">{key}: </span>
+                                {value}
+                              </div>
+                            )
+                          )}
+                    </div>
+                  </div>
+
+                          {/* AI Timeline */}
+        <div>
+          <p className="text-sm text-slate-500 mb-2">
+            AI Extracted Timeline
+          </p>
+
+          <div className="space-y-2">
+            {Array.isArray(aiAnalysis.timeline) &&
+              aiAnalysis.timeline.map((item, index) => (
+                <div
+                  key={index}
+                  className="border-l-2 border-violet-200 pl-3"
+                >
+                  <p className="text-sm text-slate-700">
+                    {typeof item === 'object'
+                      ? `${item.date}: ${item.event}`
+                      : item}
+                  </p>
+                </div>
+              ))}
+          </div>
+        </div>
+
+      </div>
+    )}
+  </div>
             {/* Case Timeline */}
             <div className="bg-white/70 backdrop-blur-sm rounded-2xl border border-violet-100 shadow-sm p-6 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
               <h2 className="text-xl font-serif font-semibold text-violet-800 mb-4 flex items-center">
