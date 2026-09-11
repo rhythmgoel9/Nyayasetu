@@ -116,12 +116,18 @@ export default function OfficerDashboard() {
             <h2 className="text-lg font-semibold text-charcoal">{t('Quick Actions') || 'Quick Actions'}</h2>
           </div>
           <div className="p-4 flex flex-col gap-3">
-            <button className="flex items-center gap-3 w-full p-3 rounded-lg border border-gray-200 hover:border-navy hover:bg-navy/5 transition-all text-left group">
-              <div className="w-8 h-8 rounded-full bg-navy/10 flex items-center justify-center text-navy group-hover:scale-110 transition-transform">
-                <Search className="w-4 h-4" />
-              </div>
-              <span className="font-medium text-charcoal">{t('Smart Search') || 'Smart Search'}</span>
-            </button>
+            <Link
+  to="/officer/cases"
+  className="flex items-center gap-3 w-full p-3 rounded-lg border border-gray-200 hover:border-navy hover:bg-navy/5 transition-all text-left group"
+>
+  <div className="w-8 h-8 rounded-full bg-navy/10 flex items-center justify-center text-navy group-hover:scale-110 transition-transform">
+    <Search className="w-4 h-4" />
+  </div>
+
+  <span className="font-medium text-charcoal">
+    {t('Smart Search') || 'Smart Search'}
+  </span>
+</Link>
             <button className="flex items-center gap-3 w-full p-3 rounded-lg border border-gray-200 hover:border-navy hover:bg-navy/5 transition-all text-left group">
               <div className="w-8 h-8 rounded-full bg-forest/10 flex items-center justify-center text-forest group-hover:scale-110 transition-transform">
                 <UploadCloud className="w-4 h-4" />

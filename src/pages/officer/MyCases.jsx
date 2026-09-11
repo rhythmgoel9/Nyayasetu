@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,7 +9,7 @@ import SignatureVerification from '../../components/shared/SignatureVerification
 import { getPriorityColor, formatDate } from '../../utils/helpers';
 import {
   FileText, Shield, Users, Network, ChevronDown, ChevronUp,
-  ExternalLink, Edit3, UploadCloud, Share2, PenTool, CheckCircle
+  ExternalLink, Edit3, UploadCloud, Share2, PenTool, CheckCircle, Search
 } from 'lucide-react';
 
 /**
@@ -24,9 +24,11 @@ import {
 export default function MyCases() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('All');
-  const [expandedCase, setExpandedCase] = useState(null);
-
+ const [activeTab, setActiveTab] = useState('All');
+const [expandedCase, setExpandedCase] = useState(null);
+const [backendCases, setBackendCases] = useState([]);
+const [backendCasesLoading, setBackendCasesLoading] = useState(false);
+const [searchQuery, setSearchQuery] = useState('');
   // Signature modal state
   const [sigModal, setSigModal] = useState({ open: false, action: '', caseId: '' });
   const [auditLog, setAuditLog] = useState([]);
@@ -39,11 +41,121 @@ export default function MyCases() {
     { label: 'Home', path: '/' },
     { label: 'My Cases', path: '/officer/cases' }
   ];
+useEffect(() => {
+  const fetchBackendCases = async () => {
+    try {
+      setBackendCasesLoading(true);
 
-  const filteredCases = mockOfficerCases.filter(c =>
-    activeTab === 'All' ? true : (c.status || '').toLowerCase() === activeTab
-  );
+      const token = localStorage.getItem('token');
 
+      /*
+       * Temporary note:
+       * The backend currently has a single-case GET endpoint.
+       * We will add a proper "get all officer cases" endpoint next.
+       */
+      console.log('Backend case loading prepared');
+    } catch (error) {
+      console.error('Failed to fetch backend cases:', error);
+    } finally {
+      setBackendCasesLoading(false);
+    }
+  };
+
+  fetchBackendCases();
+}, []);
+  const relatedSearchTerms = {
+  vehicle: ['car', 'bike', 'motorcycle', 'automobile', 'registration', 'vehicle'],
+  theft: ['stolen', 'robbery', 'snatched', 'missing', 'theft'],
+  fraud: ['scam', 'cheating', 'financial', 'fraud'],
+  assault: ['attack', 'injury', 'violence', 'assault'],
+  cyber: ['online', 'internet', ' phishing', 'cybercrime', 'cyber'],
+};
+
+const normalizeSearch = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const filteredCases = mockOfficerCases.filter((c) => {
+  const matchesTab =
+    activeTab === 'All' ||
+    (c.status || '').toLowerCase() === activeTab.toLowerCase();
+
+  const searchableValues = [
+    c.id,
+    c.caseId,
+    c.firId,
+    c.title,
+    c.description,
+    c.summary,
+    c.type,
+    c.category,
+    c.classification,
+    c.location,
+    c.jurisdiction,
+
+    // Vehicle-related fields
+    c.vehicleNumber,
+    c.vehicleNo,
+    c.registrationNumber,
+    c.registrationNo,
+    c.vehicleType,
+    c.vehicleModel,
+    c.vehicleColor,
+    c.vehicle?.number,
+    c.vehicle?.registrationNumber,
+
+    // Person-related fields
+    c.personName,
+    c.citizenName,
+    c.complainant,
+    c.accused,
+    c.victim,
+    c.officer,
+    c.assignedTo,
+    c.assignedOfficer,
+
+    // Other fields
+    c.status,
+    c.priority,
+    c.station,
+    c.department,
+    c.incidentDescription,
+    c.incidentLocation,
+
+    ...(Array.isArray(c.keywords) ? c.keywords : []),
+    ...(Array.isArray(c.tags) ? c.tags : []),
+  ];
+
+  const searchableText = searchableValues
+    .filter(Boolean)
+    .map(normalizeSearch)
+    .join(' ');
+
+  const queryWords = searchQuery
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(normalizeSearch);
+
+  if (queryWords.length === 0) {
+    return matchesTab;
+  }
+
+  const allWordsMatch = queryWords.every((word) => {
+    const directMatch = searchableText.includes(word);
+
+    const relatedTerms = relatedSearchTerms[word] || [];
+
+    const relatedMatch = relatedTerms.some((term) =>
+      searchableText.includes(normalizeSearch(term))
+    );
+
+    return directMatch || relatedMatch;
+  });
+
+  return matchesTab && allWordsMatch;
+});
   const openSigModal = (action, caseId, e) => {
     e.stopPropagation();
     setSigModal({ open: true, action, caseId });
@@ -99,7 +211,28 @@ export default function MyCases() {
           </div>
         </div>
       )}
+{/* Smart Search */}
+<div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+  <div className="flex items-center gap-3">
+    <Search size={20} className="text-gray-400" />
 
+    <input
+      type="text"
+      value={searchQuery}
+      onChange={(e) => setSearchQuery(e.target.value)}
+      placeholder="Search by case ID, FIR ID, vehicle number, person, location, or keywords..."
+      className="flex-1 outline-none border-none ring-0 focus:outline-none focus:ring-0 text-sm text-charcoal placeholder-gray-400 bg-transparent"
+    />
+
+    
+  </div>
+
+  {searchQuery && (
+    <p className="text-xs text-gray-400 mt-2 ml-8">
+      Searching across case details, descriptions, locations, and related keywords
+    </p>
+  )}
+</div>
       {/* Filter Tabs */}
       <div className="flex space-x-1 border-b border-gray-200">
         {tabs.map(tab => (
