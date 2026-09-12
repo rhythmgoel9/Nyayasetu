@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import Breadcrumb from '../../components/layout/Breadcrumb';
@@ -25,59 +25,109 @@ const LogFIR = () => {
   const [coordinates, setCoordinates] = useState(null);
   const [files, setFiles] = useState([]);
   const [trackingId, setTrackingId] = useState('');
-
-  // Speech Recognition State
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef(null);
-
-  // Geolocation State
   const [isLocating, setIsLocating] = useState(false);
 
-  useEffect(() => {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+  // Voice FIR State — browser-based Speech Recognition (no API key needed)
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const recognitionRef = useRef(null);
 
-      recognitionRef.current.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
+  const startVoiceRecording = () => {
+    try {
+      setVoiceError('');
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        throw new Error(
+          'Speech recognition is not supported in this browser. Please use Chrome or Edge.'
+        );
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        let finalText = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i][0].transcript;
+
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
+            finalText += transcript;
           }
         }
-        
-        if (finalTranscript) {
-          setDescription((prev) => prev + (prev ? ' ' : '') + finalTranscript);
+
+        if (finalText.trim()) {
+          setDescription((previous) => {
+            const base = previous.trim();
+            const spoken = finalText.trim();
+
+            if (!spoken) return previous;
+            if (!base) return spoken;
+
+            return `${base} ${spoken}`;
+          });
         }
       };
 
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+
+        const messages = {
+          'not-allowed': 'Microphone permission was denied. Allow microphone access and try again.',
+          'audio-capture': 'No microphone was found on this device.',
+          'no-speech': 'No speech was detected. Please try again.',
+          network: 'The browser speech recognition service could not be reached. Check your internet connection.',
+          aborted: 'Speech recognition was stopped.'
+        };
+
+        if (event.error !== 'aborted') {
+          setVoiceError(messages[event.error] || 'Could not recognize speech. Please try again.');
+        }
+
         setIsListening(false);
       };
 
-      recognitionRef.current.onend = () => {
+      recognition.onend = () => {
+        recognitionRef.current = null;
         setIsListening(false);
       };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (error) {
+      console.error('Speech recognition error:', error);
+      setVoiceError(error?.message || 'Could not start speech recognition.');
+      setIsListening(false);
     }
-  }, []);
+  };
+
+  const stopVoiceRecording = () => {
+    const recognition = recognitionRef.current;
+
+    if (!recognition) {
+      setIsListening(false);
+      return;
+    }
+
+    recognition.stop();
+    setIsListening(false);
+  };
 
   const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
+      stopVoiceRecording();
     } else {
-      try {
-        recognitionRef.current?.start();
-        setIsListening(true);
-      } catch (e) {
-        console.error(e);
-      }
+      startVoiceRecording();
     }
   };
 
@@ -232,15 +282,25 @@ const LogFIR = () => {
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2 flex justify-between">
                   <span>Description</span>
-                  <button 
+                  <button
                     type="button"
                     onClick={toggleListening}
-                    className={`flex items-center gap-1 text-sm font-medium transition-colors ${isListening ? 'text-alert' : 'text-navy'}`}
+                    className={`flex items-center gap-1 text-sm font-medium transition-colors ${
+                      isListening
+                        ? 'text-alert'
+                        : 'text-navy'
+                    }`}
                   >
                     {isListening ? (
-                      <><MicOff size={16} className="animate-pulse" /> Stop Listening...</>
+                      <>
+                        <MicOff size={16} className="animate-pulse" />
+                        Stop Recording
+                      </>
                     ) : (
-                      <><Mic size={16} /> Use Voice Typing</>
+                      <>
+                        <Mic size={16} />
+                        Use Voice FIR
+                      </>
                     )}
                   </button>
                 </label>
@@ -251,6 +311,13 @@ const LogFIR = () => {
                   placeholder="Please describe the incident in detail..."
                   className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-navy focus:border-transparent outline-none resize-none"
                 ></textarea>
+
+                {voiceError && (
+                  <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                    {voiceError}
+                  </div>
+                )}
+
                 {isListening && (
                   <div className="absolute top-[60%] left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                     <span className="flex h-12 w-12 relative">

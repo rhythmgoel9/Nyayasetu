@@ -27,6 +27,7 @@ import AccessControl from './pages/officer/AccessControl';
 import DepartmentChat from './pages/officer/DepartmentChat';
 import AuditLog from './pages/officer/AuditLog';
 import SecurityPanel from './pages/officer/SecurityPanel';
+import AdvancedAnalytics from './pages/officer/AdvancedAnalytics';
 import CourtDashboard from './pages/court/CourtDashboard';
 import CourtCaseDetail from './pages/court/CourtCaseDetail';
 import ViewDocuments from './pages/court/ViewDocuments';
@@ -117,6 +118,7 @@ function AppRoutes() {
         <Route path="/officer/chat" element={<DepartmentChat />} />
         <Route path="/officer/audit" element={<AuditLog />} />
         <Route path="/officer/security" element={<SecurityPanel />} />
+        <Route path="/officer/analytics" element={<AdvancedAnalytics />} />
       </Route>
 
       {/* Court routes */}
