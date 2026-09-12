@@ -2,15 +2,29 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
+const {
+  createSignedCopy,
+} = require("../services/signatureOverlayService");
+
 const Evidence = require("../models/Evidence");
 const DigitalSignature = require("../models/DigitalSignature");
+
+
+// ======================================================
+// SIGN EVIDENCE
+// ======================================================
 
 const signEvidence = async (req, res) => {
   try {
     const { evidenceId } = req.params;
 
-    // Check whether evidence exists
-    const evidence = await Evidence.findOne({ evidenceId });
+    // --------------------------------------------------
+    // 1. Find evidence
+    // --------------------------------------------------
+
+    const evidence = await Evidence.findOne({
+      evidenceId,
+    });
 
     if (!evidence) {
       return res.status(404).json({
@@ -18,14 +32,43 @@ const signEvidence = async (req, res) => {
       });
     }
 
-    // Check whether signature image was uploaded
+
+    // --------------------------------------------------
+    // 2. Check signature image
+    // --------------------------------------------------
+
     if (!req.file) {
       return res.status(400).json({
         message: "Signature image is required",
       });
     }
 
-    // Check whether user is authorized to sign
+
+    // --------------------------------------------------
+    // 3. Check signature image type
+    // --------------------------------------------------
+
+    const allowedSignatureTypes = [
+      "image/png",
+      "image/jpeg",
+    ];
+
+    if (!allowedSignatureTypes.includes(req.file.mimetype)) {
+      // Delete uploaded invalid signature file
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
+      return res.status(400).json({
+        message: "Signature must be a PNG or JPEG image",
+      });
+    }
+
+
+    // --------------------------------------------------
+    // 4. Check user role
+    // --------------------------------------------------
+
     const allowedRoles = [
       "POLICE",
       "INVESTIGATING_AGENCY",
@@ -33,69 +76,191 @@ const signEvidence = async (req, res) => {
     ];
 
     if (!allowedRoles.includes(req.user.role)) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
       return res.status(403).json({
         message: "You are not authorized to sign evidence",
       });
     }
 
-    // Check if evidence is already signed
-    const existingSignature = await DigitalSignature.findOne({
-      evidenceId,
-    });
+
+    // --------------------------------------------------
+    // 5. Check if evidence is already signed
+    // --------------------------------------------------
+
+    const existingSignature =
+      await DigitalSignature.findOne({
+        evidenceId,
+      });
 
     if (existingSignature) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
       return res.status(400).json({
         message: "Evidence has already been signed",
       });
     }
 
-    // Check whether the original evidence file still exists
-    const evidenceFilePath = path.resolve(evidence.filePath);
+
+    // --------------------------------------------------
+    // 6. Check evidence file
+    // --------------------------------------------------
+
+    const evidenceFilePath = path.resolve(
+      evidence.filePath
+    );
 
     if (!fs.existsSync(evidenceFilePath)) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
       return res.status(404).json({
         message: "Evidence file not found",
       });
     }
 
-    // Recalculate the evidence hash
-    const fileBuffer = fs.readFileSync(evidenceFilePath);
+
+    // --------------------------------------------------
+    // 7. Determine evidence type
+    // --------------------------------------------------
+
+    const evidenceExtension = path
+      .extname(evidence.fileName)
+      .toLowerCase();
+
+    let evidenceMimeType = "";
+
+
+    if (evidenceExtension === ".pdf") {
+      evidenceMimeType = "application/pdf";
+    }
+
+    else if (
+      evidenceExtension === ".jpg" ||
+      evidenceExtension === ".jpeg"
+    ) {
+      evidenceMimeType = "image/jpeg";
+    }
+
+    else if (evidenceExtension === ".png") {
+      evidenceMimeType = "image/png";
+    }
+
+
+    // --------------------------------------------------
+    // 8. Block unsupported evidence types
+    // --------------------------------------------------
+
+    if (!evidenceMimeType) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
+      return res.status(415).json({
+        message:
+          "Digital signature is supported only for PDF and image evidence",
+      });
+    }
+
+
+    // --------------------------------------------------
+    // 9. Read original evidence
+    // --------------------------------------------------
+
+    const fileBuffer = fs.readFileSync(
+      evidenceFilePath
+    );
+
+
+    // --------------------------------------------------
+    // 10. Calculate current SHA-256
+    // --------------------------------------------------
 
     const currentHash = crypto
       .createHash("sha256")
       .update(fileBuffer)
       .digest("hex");
 
-    // Do not sign modified evidence
+
+    // --------------------------------------------------
+    // 11. Verify evidence has not been modified
+    // --------------------------------------------------
+
     if (currentHash !== evidence.fileHash) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
       return res.status(409).json({
-        message: "Evidence has been modified and cannot be signed",
+        message:
+          "Evidence has been modified and cannot be signed",
       });
     }
 
-    // Read private signing key
+
+    // --------------------------------------------------
+    // 12. Create visually signed copy
+    // --------------------------------------------------
+
+    const signedFilePath = await createSignedCopy(
+      evidenceFilePath,
+      req.file.path,
+      evidenceMimeType
+    );
+
+
+    // --------------------------------------------------
+    // 13. Load private key
+    // --------------------------------------------------
+
     const privateKeyPath = path.join(
       __dirname,
       "../../keys/private.pem"
     );
 
     if (!fs.existsSync(privateKeyPath)) {
+
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+
       return res.status(500).json({
         message: "Signing key not found",
       });
     }
+
 
     const privateKey = fs.readFileSync(
       privateKeyPath,
       "utf8"
     );
 
-    // Create data that will be digitally signed
+
+    // --------------------------------------------------
+    // 14. Prepare data for digital signature
+    // --------------------------------------------------
+
     const dataToSign =
       `${evidence.evidenceId}:${evidence.fileHash}`;
 
-    // Create cryptographic signature
-    const signer = crypto.createSign("SHA256");
+
+    // --------------------------------------------------
+    // 15. Create RSA digital signature
+    // --------------------------------------------------
+
+    const signer = crypto.createSign(
+      "SHA256"
+    );
 
     signer.update(dataToSign);
     signer.end();
@@ -105,143 +270,433 @@ const signEvidence = async (req, res) => {
       "base64"
     );
 
-    // Save signature information
-    const signatureRecord = await DigitalSignature.create({
-      evidenceId: evidence.evidenceId,
-      evidenceHash: evidence.fileHash,
-      signatureImage: req.file.path,
-      signedBy: req.user.userId,
-      signedAt: new Date(),
-      digitalSignature,
-      verificationStatus: "VALID",
-    });
+
+    // --------------------------------------------------
+    // 16. Save signature record
+    // --------------------------------------------------
+
+    const signatureRecord =
+      await DigitalSignature.create({
+
+        evidenceId:
+          evidence.evidenceId,
+
+        evidenceHash:
+          evidence.fileHash,
+
+        signatureImage:
+          req.file.path,
+
+        signedFilePath:
+          signedFilePath,
+
+        signedBy:
+          req.user.userId,
+
+        signedAt:
+          new Date(),
+
+        digitalSignature:
+          digitalSignature,
+
+        verificationStatus:
+          "VALID",
+      });
+
+
+    // --------------------------------------------------
+    // 17. Send response
+    // --------------------------------------------------
 
     res.status(201).json({
-      message: "Evidence signed successfully",
+
+      message:
+        "Evidence signed successfully",
 
       signature: {
-        evidenceId: signatureRecord.evidenceId,
-        evidenceHash: signatureRecord.evidenceHash,
-        signatureImage: signatureRecord.signatureImage,
-        signedBy: signatureRecord.signedBy,
-        signedAt: signatureRecord.signedAt,
-        verificationStatus: signatureRecord.verificationStatus,
+
+        evidenceId:
+          signatureRecord.evidenceId,
+
+        evidenceHash:
+          signatureRecord.evidenceHash,
+
+        signatureImage:
+          signatureRecord.signatureImage,
+
+        signedFilePath:
+          signatureRecord.signedFilePath,
+
+        signedBy:
+          signatureRecord.signedBy,
+
+        signedAt:
+          signatureRecord.signedAt,
+
+        verificationStatus:
+          signatureRecord.verificationStatus,
       },
     });
+
   } catch (error) {
+
+    // Delete uploaded signature image
+    // if something goes wrong
+
+    if (
+      req.file &&
+      req.file.path &&
+      fs.existsSync(req.file.path)
+    ) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    console.error(
+      "Digital signature error:",
+      error
+    );
+
     res.status(500).json({
-      message: "Failed to sign evidence",
-      error: error.message,
+      message:
+        "Failed to sign evidence",
+
+      error:
+        error.message,
     });
   }
 };
-const verifySignature = async (req, res) => {
+
+
+
+// ======================================================
+// VERIFY DIGITAL SIGNATURE
+// ======================================================
+
+const verifySignature = async (
+  req,
+  res
+) => {
+
   try {
+
     const { evidenceId } = req.params;
 
-    // Find evidence
-    const evidence = await Evidence.findOne({ evidenceId });
+
+    // --------------------------------------------------
+    // 1. Find evidence
+    // --------------------------------------------------
+
+    const evidence =
+      await Evidence.findOne({
+        evidenceId,
+      });
 
     if (!evidence) {
       return res.status(404).json({
-        message: "Evidence not found",
+        message:
+          "Evidence not found",
       });
     }
 
-    // Find digital signature
-    const signature = await DigitalSignature.findOne({
-      evidenceId,
-    });
+
+    // --------------------------------------------------
+    // 2. Find digital signature
+    // --------------------------------------------------
+
+    const signature =
+      await DigitalSignature.findOne({
+        evidenceId,
+      });
 
     if (!signature) {
       return res.status(404).json({
-        message: "Digital signature not found",
+        message:
+          "Digital signature not found",
       });
     }
 
-    // Check evidence file exists
-    const evidenceFilePath = path.resolve(evidence.filePath);
+
+    // --------------------------------------------------
+    // 3. Check original evidence file
+    // --------------------------------------------------
+
+    const evidenceFilePath =
+      path.resolve(
+        evidence.filePath
+      );
 
     if (!fs.existsSync(evidenceFilePath)) {
       return res.status(404).json({
-        message: "Evidence file not found",
+        message:
+          "Evidence file not found",
       });
     }
 
-    // Recalculate current evidence hash
-    const fileBuffer = fs.readFileSync(evidenceFilePath);
 
-    const currentHash = crypto
-      .createHash("sha256")
-      .update(fileBuffer)
-      .digest("hex");
+    // --------------------------------------------------
+    // 4. Calculate current SHA-256
+    // --------------------------------------------------
 
-    // Check whether evidence was modified
-    if (currentHash !== signature.evidenceHash) {
-      signature.verificationStatus = "INVALID";
+    const fileBuffer =
+      fs.readFileSync(
+        evidenceFilePath
+      );
+
+    const currentHash =
+      crypto
+        .createHash("sha256")
+        .update(fileBuffer)
+        .digest("hex");
+
+
+    // --------------------------------------------------
+    // 5. Compare hash
+    // --------------------------------------------------
+
+    if (
+      currentHash !==
+      signature.evidenceHash
+    ) {
+
+      signature.verificationStatus =
+        "INVALID";
+
       await signature.save();
 
       return res.status(200).json({
+
         evidenceId,
-        verificationStatus: "INVALID",
-        verified: false,
-        message: "Evidence has been modified after signing",
+
+        originalHash:
+          signature.evidenceHash,
+
+        currentHash,
+
+        verificationStatus:
+          "INVALID",
+
+        verified:
+          false,
+
+        message:
+          "Evidence has been modified after signing",
       });
     }
 
-    // Read public key
-    const publicKeyPath = path.join(
-      __dirname,
-      "../../keys/public.pem"
-    );
+
+    // --------------------------------------------------
+    // 6. Load public key
+    // --------------------------------------------------
+
+    const publicKeyPath =
+      path.join(
+        __dirname,
+        "../../keys/public.pem"
+      );
 
     if (!fs.existsSync(publicKeyPath)) {
       return res.status(500).json({
-        message: "Public key not found",
+        message:
+          "Public key not found",
       });
     }
 
-    const publicKey = fs.readFileSync(
-      publicKeyPath,
-      "utf8"
-    );
 
-    // Recreate the exact data that was signed
+    const publicKey =
+      fs.readFileSync(
+        publicKeyPath,
+        "utf8"
+      );
+
+
+    // --------------------------------------------------
+    // 7. Prepare data for verification
+    // --------------------------------------------------
+
     const dataToVerify =
       `${evidence.evidenceId}:${signature.evidenceHash}`;
 
-    // Verify cryptographic signature
-    const verifier = crypto.createVerify("SHA256");
 
-    verifier.update(dataToVerify);
-    verifier.end();
+    // --------------------------------------------------
+    // 8. Verify RSA signature
+    // --------------------------------------------------
 
-    const isValid = verifier.verify(
-      publicKey,
-      signature.digitalSignature,
-      "base64"
+    const verifier =
+      crypto.createVerify(
+        "SHA256"
+      );
+
+    verifier.update(
+      dataToVerify
     );
 
-    signature.verificationStatus = isValid
-      ? "VALID"
-      : "INVALID";
+    verifier.end();
+
+
+    const isValid =
+      verifier.verify(
+        publicKey,
+        signature.digitalSignature,
+        "base64"
+      );
+
+
+    // --------------------------------------------------
+    // 9. Update verification status
+    // --------------------------------------------------
+
+    signature.verificationStatus =
+      isValid
+        ? "VALID"
+        : "INVALID";
 
     await signature.save();
 
+
+    // --------------------------------------------------
+    // 10. Send response
+    // --------------------------------------------------
+
     res.status(200).json({
+
       evidenceId,
-      verificationStatus: signature.verificationStatus,
-      verified: isValid,
+
+      originalHash:
+        signature.evidenceHash,
+
+      currentHash,
+
+      verificationStatus:
+        signature.verificationStatus,
+
+      verified:
+        isValid,
     });
+
   } catch (error) {
+
+    console.error(
+      "Signature verification error:",
+      error
+    );
+
     res.status(500).json({
-      message: "Signature verification failed",
-      error: error.message,
+
+      message:
+        "Signature verification failed",
+
+      error:
+        error.message,
     });
   }
 };
 
+
+
+// ======================================================
+// GET SIGNED EVIDENCE
+// ======================================================
+
+const getSignedEvidence = async (
+  req,
+  res
+) => {
+
+  try {
+
+    const { evidenceId } =
+      req.params;
+
+
+    // --------------------------------------------------
+    // 1. Find signature
+    // --------------------------------------------------
+
+    const signature =
+      await DigitalSignature.findOne({
+        evidenceId,
+      });
+
+    if (!signature) {
+      return res.status(404).json({
+        message:
+          "Digital signature not found",
+      });
+    }
+
+
+    // --------------------------------------------------
+    // 2. Check signed file path
+    // --------------------------------------------------
+
+    if (!signature.signedFilePath) {
+      return res.status(404).json({
+        message:
+          "No visually signed file available for this evidence",
+      });
+    }
+
+
+    // --------------------------------------------------
+    // 3. Resolve signed file
+    // --------------------------------------------------
+
+    const signedFilePath =
+      path.resolve(
+        signature.signedFilePath
+      );
+
+
+    // --------------------------------------------------
+    // 4. Check file exists
+    // --------------------------------------------------
+
+    if (!fs.existsSync(signedFilePath)) {
+      return res.status(404).json({
+        message:
+          "Signed evidence file not found",
+      });
+    }
+
+
+    // --------------------------------------------------
+    // 5. Send signed file
+    // --------------------------------------------------
+
+    res.sendFile(
+      signedFilePath
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Get signed evidence error:",
+      error
+    );
+
+    res.status(500).json({
+
+      message:
+        "Failed to retrieve signed evidence",
+
+      error:
+        error.message,
+    });
+  }
+};
+
+
+
+// ======================================================
+// EXPORT CONTROLLERS
+// ======================================================
+
 module.exports = {
+
   signEvidence,
+
   verifySignature,
+
+  getSignedEvidence,
+
 };

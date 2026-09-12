@@ -19,6 +19,10 @@ const digitalSignatureSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    signedFilePath: {
+      type: String,
+      default: null,
+    },
 
     // Officer who signed the evidence
     signedBy: {

@@ -4,7 +4,7 @@ const protect = require("../middleware/authMiddleware");
 
 const {
   createCustodyLog,
-  getCustodyHistory
+  getCustodyLogs
 } = require("../controllers/custodyController");
 
 const router = express.Router();
@@ -14,5 +14,5 @@ router.post(
   protect,
   createCustodyLog
 );
-router.get("/:evidenceId/custody", protect, getCustodyHistory);
+router.get("/:evidenceId/custody", protect, getCustodyLogs);
 module.exports = router;

@@ -6,6 +6,10 @@ const Case = require("../models/Case");
 const Evidence = require("../models/Evidence");
 const generateEvidenceId = require("../services/evidenceIdService");
 
+const {
+  anchorEvidence,
+} = require("../blockchain/evidenceRegistry");
+
 const uploadEvidence = async (req, res) => {
   try {
     const { caseId, description } = req.body;
@@ -61,7 +65,36 @@ const uploadEvidence = async (req, res) => {
       fileHash,
       custodyStatus: "IN_CUSTODY",
       verificationStatus: "PENDING",
+      blockchainStatus: "NOT_ANCHORED",
     });
+
+    // Anchor evidence hash on blockchain
+    try {
+      const blockchainResult = await anchorEvidence(
+        evidence.evidenceId,
+        evidence.fileHash
+      );
+
+      evidence.blockchainStatus = "ANCHORED";
+      evidence.blockchainTxHash =
+        blockchainResult.transactionHash;
+      evidence.blockchainAnchoredHash =
+        evidence.fileHash;
+      evidence.blockchainAnchoredAt = new Date();
+
+      await evidence.save();
+    } catch (blockchainError) {
+      // Evidence is already safely stored in MongoDB.
+      // Blockchain anchoring failed, so mark it accordingly.
+      evidence.blockchainStatus = "FAILED";
+
+      await evidence.save();
+
+      console.error(
+        "Blockchain anchoring failed:",
+        blockchainError.message
+      );
+    }
 
     res.status(201).json({
       message: "Evidence uploaded successfully",
@@ -73,6 +106,13 @@ const uploadEvidence = async (req, res) => {
         uploadedBy: evidence.uploadedBy,
         custodyStatus: evidence.custodyStatus,
         verificationStatus: evidence.verificationStatus,
+
+        blockchainStatus: evidence.blockchainStatus,
+        blockchainTxHash: evidence.blockchainTxHash,
+        blockchainAnchoredHash:
+          evidence.blockchainAnchoredHash,
+        blockchainAnchoredAt:
+          evidence.blockchainAnchoredAt,
       },
     });
   } catch (error) {
@@ -87,6 +127,7 @@ const uploadEvidence = async (req, res) => {
     });
   }
 };
+
 const verifyEvidence = async (req, res) => {
   try {
     const { evidenceId } = req.params;

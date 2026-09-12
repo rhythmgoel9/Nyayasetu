@@ -9,12 +9,7 @@ const custodyLogSchema = new mongoose.Schema(
 
     action: {
       type: String,
-      enum: [
-        "UPLOADED",
-        "TRANSFERRED",
-        "RECEIVED",
-        "RELEASED",
-      ],
+      enum: ["UPLOADED", "TRANSFERRED", "RECEIVED", "RELEASED"],
       required: true,
     },
 

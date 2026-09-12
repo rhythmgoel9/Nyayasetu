@@ -57,7 +57,7 @@ const createCustodyLog = async (req, res) => {
     });
   }
 };
-const getCustodyHistory = async (req, res) => {
+const getCustodyLogs = async (req, res) => {
   try {
     const { evidenceId } = req.params;
 
@@ -79,7 +79,7 @@ const getCustodyHistory = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
-      message: "Failed to fetch custody history",
+      message: "Failed to fetch custody logs",
       error: error.message,
     });
   }
@@ -87,5 +87,5 @@ const getCustodyHistory = async (req, res) => {
 
 module.exports = {
   createCustodyLog,
-  getCustodyHistory
+  getCustodyLogs
 };

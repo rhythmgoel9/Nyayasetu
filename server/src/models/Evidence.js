@@ -23,6 +23,7 @@ const evidenceSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
     filePath: {
       type: String,
       required: true,
@@ -51,6 +52,32 @@ const evidenceSchema = new mongoose.Schema(
         "TAMPERED",
       ],
       default: "PENDING",
+    },
+
+    // Blockchain fields
+    blockchainStatus: {
+      type: String,
+      enum: [
+        "NOT_ANCHORED",
+        "ANCHORED",
+        "FAILED",
+      ],
+      default: "NOT_ANCHORED",
+    },
+
+    blockchainTxHash: {
+      type: String,
+      default: null,
+    },
+
+    blockchainAnchoredHash: {
+      type: String,
+      default: null,
+    },
+
+    blockchainAnchoredAt: {
+      type: Date,
+      default: null,
     },
   },
   {

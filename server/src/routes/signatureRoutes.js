@@ -3,7 +3,8 @@ const protect = require("../middleware/authMiddleware");
 const upload = require("../config/upload");
 const {
   signEvidence,
-  verifySignature
+  verifySignature,
+  getSignedEvidence
 } = require("../controllers/signatureController");
 const router = express.Router();
 
@@ -17,6 +18,11 @@ router.get(
   "/:evidenceId/signature/verify",
   protect,
   verifySignature
+);
+router.get(
+  "/:evidenceId/signed",
+  protect,
+  getSignedEvidence
 );
 
 module.exports = router;
