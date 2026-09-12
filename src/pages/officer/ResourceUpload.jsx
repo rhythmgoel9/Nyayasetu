@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import Breadcrumb from '../../components/layout/Breadcrumb';
 import { FileText, BarChart, Shield, UploadCloud, Lock, CheckCircle2 } from 'lucide-react';
@@ -7,6 +7,7 @@ import { formatDate } from '../../utils/helpers';
 export default function ResourceUpload() {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('Documents');
+  const fileInputRef = useRef(null);
   const [uploadedFiles, setUploadedFiles] = useState([
     { id: 1, name: 'FIR_Copy_1198.pdf', size: '2.4 MB', date: new Date().toISOString(), type: 'Documents' },
     { id: 2, name: 'Forensic_Report_A.pdf', size: '5.1 MB', date: new Date().toISOString(), type: 'Reports' },
@@ -65,6 +66,11 @@ export default function ResourceUpload() {
         </div>
 
         <div className="p-6">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+          />
           <div 
             onClick={handleUpload}
             className="dropzone w-full p-12 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-navy transition-all cursor-pointer flex flex-col items-center justify-center text-center"
